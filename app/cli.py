@@ -55,6 +55,39 @@ def load_config() -> dict:
         "batch_size": 15
     }
 
+def get_deck_tree_info(deck_name: str) -> list[dict]:
+    """
+    Parses a deck name (handling sub-decks split by '::') and queries Anki
+    for the card count at each level of the tree.
+    """
+    parts = deck_name.split("::")
+    tree_nodes = []
+    current_path = ""
+    for part in parts:
+        if current_path:
+            current_path += "::" + part
+        else:
+            current_path = part
+            
+        notes = get_deck_notes(current_path)
+        tree_nodes.append({
+            "full_name": current_path,
+            "short_name": part,
+            "count": len(notes)
+        })
+    return tree_nodes
+
+def render_deck_tree(tree_nodes: list[dict]) -> str:
+    """
+    Formats the tree nodes as a text-based folder directory tree.
+    """
+    lines = []
+    for idx, node in enumerate(tree_nodes):
+        indent = "    " * idx
+        prefix = "└── " if idx > 0 else ""
+        lines.append(f"{indent}{prefix}{node['short_name']} (已有 {node['count']} 张卡片)")
+    return "\n".join(lines)
+
 def build_command(file_path: str, deck_override: str = None) -> None:
     """
     Orchestrates the entire Word2Anki import & generation pipeline.
@@ -136,10 +169,14 @@ def build_command(file_path: str, deck_override: str = None) -> None:
             logger.info("用户中断了任务。")
             return
 
+    # Query planned deck tree details
+    tree_nodes = get_deck_tree_info(deck_name)
+
     # User startup confirmation
     print("\n" + "="*50)
     print("📋 Word2Anki 任务启动确认")
-    print(f"  - 目标 Anki 单词本 (Deck): {deck_name}")
+    print("  - 目标 Anki 单词本目录树规划:")
+    print(render_deck_tree(tree_nodes))
     print(f"  - 文档内总单词/词组数: {total_words}")
     print(f"  - 已导入成功单词数: {completed_count}")
     print(f"  - 本次待导入的单词数: {len(pending_words)}")
