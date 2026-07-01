@@ -115,6 +115,6 @@ def extract_words_from_docx(file_path: str) -> tuple[list[str], int]:
                     if cleaned_term:
                         cleaned_terms.append(cleaned_term)
                 
-    # Lowercase and deduplicate while preserving the original order of appearance
-    unique_terms = list(dict.fromkeys(t.lower() for t in cleaned_terms))
-    return unique_terms, raw_lines_count
+    # Return the full list of lowercased terms and the raw line count
+    all_terms = [t.lower() for t in cleaned_terms]
+    return all_terms, raw_lines_count

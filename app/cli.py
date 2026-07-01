@@ -98,12 +98,32 @@ def build_command(file_path: str, deck_override: str = None) -> None:
     # 1. Read word document and extract words
     logger.info(f"Reading Word document: {file_path}")
     try:
-        all_words, raw_lines_count = extract_words_from_docx(file_path)
+        all_terms, raw_lines_count = extract_words_from_docx(file_path)
     except Exception as e:
         logger.error(f"Error parsing Word file: {e}")
         sys.exit(1)
         
-    logger.info(f"Extracted {len(all_words)} unique words/phrases from {raw_lines_count} lines in document.")
+    unique_words = list(dict.fromkeys(all_terms))
+    duplicates_count = len(all_terms) - len(unique_words)
+    
+    all_words = unique_words
+    if duplicates_count > 0:
+        print("\n" + "*"*50)
+        print(f"⚠️  检测到文档中存在 {duplicates_count} 个重复的单词/词组。")
+        print("*"*50 + "\n")
+        try:
+            dedup_input = input("是否需要自动过滤去重？(y/n) [y]: ").strip().lower()
+            if dedup_input in ["n", "no"]:
+                all_words = all_terms
+                logger.info("用户选择保留重复的单词/词组。")
+            else:
+                logger.info("用户选择自动过滤去重。")
+        except KeyboardInterrupt:
+            print()
+            logger.info("用户中断了任务。")
+            return
+            
+    logger.info(f"Extracted {len(all_words)} words/phrases to process from {raw_lines_count} lines in document.")
     
     if not all_words:
         logger.warning("No words found in the document. Exiting.")
