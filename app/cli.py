@@ -6,10 +6,10 @@ import asyncio
 from pathlib import Path
 
 from app.importer import extract_words_from_docx
-from app.db import get_pending_words, init_db, mark_done, mark_failed
+from app.db import get_pending_words, init_db, mark_done, mark_failed, get_db_count, clear_db
 from app.ai import process_batch
 from app.audio import generate_batch_audio
-from app.anki import check_anki_connection, ensure_deck_exists, ensure_model_exists, push_card_to_anki
+from app.anki import check_anki_connection, ensure_deck_exists, ensure_model_exists, push_card_to_anki, get_deck_notes, delete_deck_notes
 
 # Ensure logs directory exists
 Path("logs").mkdir(exist_ok=True)
@@ -101,6 +101,41 @@ def build_command(file_path: str, deck_override: str = None) -> None:
         logger.info("用户中断了任务。")
         return
     
+    # 3. Check Anki connect first so we can query deck cards
+    logger.info("Checking Anki connection...")
+    if not check_anki_connection():
+        logger.error("Anki is not running. Please launch Anki and make sure AnkiConnect is installed and running.")
+        sys.exit(1)
+
+    # 4. Check for historical data in DB and Anki
+    db_count = get_db_count(db_path)
+    anki_notes = get_deck_notes(deck_name)
+    anki_count = len(anki_notes)
+    
+    if db_count > 0 or anki_count > 0:
+        print("\n" + "!"*50)
+        print("⚠️  检测到已存在的历史数据：")
+        print(f"  - 本地进度数据库记录数: {db_count} 个单词")
+        print(f"  - Anki 单词本 '{deck_name}' 卡片数: {anki_count} 张卡片")
+        print("!"*50 + "\n")
+        
+        try:
+            clear_confirm = input("是否需要清空上述历史数据，重新开始全新导入？(y/n) [n]: ").strip().lower()
+            if clear_confirm in ["y", "yes"]:
+                logger.info("正在清空历史记录，请稍候...")
+                clear_db(db_path)
+                delete_deck_notes(anki_notes)
+                # Recalculate pending words after clearing
+                pending_words = get_pending_words(db_path, all_words)
+                completed_count = 0
+                logger.info("✅ 历史数据已清空。")
+            else:
+                logger.info("保留历史数据，将以断点续传/覆盖的增量模式继续。")
+        except KeyboardInterrupt:
+            print()
+            logger.info("用户中断了任务。")
+            return
+
     # User startup confirmation
     print("\n" + "="*50)
     print("📋 Word2Anki 任务启动确认")
@@ -119,12 +154,6 @@ def build_command(file_path: str, deck_override: str = None) -> None:
         print()
         logger.info("用户中断了导入任务。")
         return
-
-    # 3. Check Anki connect, ensure deck and note type exist
-    logger.info("Checking Anki connection...")
-    if not check_anki_connection():
-        logger.error("Anki is not running. Please launch Anki and make sure AnkiConnect is installed and running.")
-        sys.exit(1)
         
     try:
         ensure_deck_exists(deck_name)

@@ -70,3 +70,21 @@ def mark_failed(db_path: str, word: str, error_msg: str) -> None:
             (word, error_msg, error_msg)
         )
         conn.commit()
+
+def get_db_count(db_path: str) -> int:
+    """
+    Returns the total number of entries in the jobs table.
+    """
+    init_db(db_path)
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute("SELECT COUNT(*) FROM jobs;")
+        return cursor.fetchone()[0]
+
+def clear_db(db_path: str) -> None:
+    """
+    Clears all entries from the jobs table.
+    """
+    init_db(db_path)
+    with get_db_connection(db_path) as conn:
+        conn.execute("DELETE FROM jobs;")
+        conn.commit()

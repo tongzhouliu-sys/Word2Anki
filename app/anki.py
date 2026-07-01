@@ -207,3 +207,19 @@ def push_card_to_anki(deck_name: str, word_data: dict, media_dir_str: str = "med
             logger.info(f"Card for '{word}' already exists in deck '{deck_name}', skipping addNote.")
         else:
             raise e
+
+def get_deck_notes(deck_name: str) -> list[int]:
+    """
+    Returns a list of note IDs currently in the target deck.
+    """
+    try:
+        return invoke("findNotes", query=f"deck:\"{deck_name}\"")
+    except Exception:
+        return []
+
+def delete_deck_notes(note_ids: list[int]) -> None:
+    """
+    Deletes the specified notes from Anki.
+    """
+    if note_ids:
+        invoke("deleteNotes", notes=note_ids)
