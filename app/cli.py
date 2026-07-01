@@ -5,8 +5,8 @@ import logging
 import asyncio
 from pathlib import Path
 
-from app.importer import extract_words_from_docx
-from app.db import get_pending_words, init_db, mark_done, mark_failed, get_db_count, clear_db
+from app.importer import extract_words_from_docx, extract_words_from_txt
+from app.db import get_pending_words, init_db, mark_done, mark_failed, get_db_count, clear_db, get_failed_words
 from app.ai import process_batch
 from app.audio import generate_batch_audio
 from app.anki import check_anki_connection, ensure_deck_exists, ensure_model_exists, push_card_to_anki, get_deck_notes, delete_deck_notes
@@ -95,13 +95,22 @@ def build_command(file_path: str, deck_override: str = None) -> None:
     config = load_config()
     db_path = config.get("db_path", "word2anki.db")
     
-    # 1. Read word document and extract words
-    logger.info(f"Reading Word document: {file_path}")
-    try:
-        all_terms, raw_lines_count, numbered_count = extract_words_from_docx(file_path)
-    except Exception as e:
-        logger.error(f"Error parsing Word file: {e}")
-        sys.exit(1)
+    # 1. Read input document and extract words (supports .docx and .txt)
+    is_txt = file_path.lower().endswith(".txt")
+    if is_txt:
+        logger.info(f"Reading plain text file: {file_path}")
+        try:
+            all_terms, raw_lines_count, numbered_count = extract_words_from_txt(file_path)
+        except Exception as e:
+            logger.error(f"Error parsing text file: {e}")
+            sys.exit(1)
+    else:
+        logger.info(f"Reading Word document: {file_path}")
+        try:
+            all_terms, raw_lines_count, numbered_count = extract_words_from_docx(file_path)
+        except Exception as e:
+            logger.error(f"Error parsing Word file: {e}")
+            sys.exit(1)
         
     unique_words = list(dict.fromkeys(all_terms))
     duplicates_count = len(all_terms) - len(unique_words)
@@ -284,6 +293,25 @@ def build_command(file_path: str, deck_override: str = None) -> None:
                 mark_failed(db_path, w, error_msg)
 
     logger.info("Pipeline run complete.")
+    
+    # 5. Generate or cleanup failed_words.txt
+    failed_words = get_failed_words(db_path)
+    failed_file = Path("failed_words.txt")
+    if failed_words:
+        try:
+            with open(failed_file, "w", encoding="utf-8") as f:
+                for fw in failed_words:
+                    f.write(f"{fw}\n")
+            logger.info(f"Generated failed_words.txt containing {len(failed_words)} failed items.")
+        except Exception as e:
+            logger.error(f"Failed to generate failed_words.txt: {e}")
+    else:
+        if failed_file.exists():
+            try:
+                failed_file.unlink()
+                logger.info("Removed old failed_words.txt as there are no failures now.")
+            except Exception as e:
+                logger.warning(f"Failed to delete old failed_words.txt: {e}")
 
 def main() -> None:
     parser = argparse.ArgumentParser(

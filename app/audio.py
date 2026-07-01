@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from pathlib import Path
 import edge_tts
 
@@ -10,19 +11,22 @@ async def generate_single_audio(word: str, voice: str, media_dir: Path) -> bool:
     Generates TTS audio file for a single word if it does not already exist.
     """
     word_clean = word.strip().lower()
-    output_path = media_dir / f"{word_clean}.mp3"
+    safe_name = re.sub(r'[\\/*?:"<>|]', '_', word_clean)
+    output_path = media_dir / f"{safe_name}.mp3"
     
     if output_path.exists():
-        logger.info(f"Audio cache found for '{word_clean}', skipping TTS.")
+        logger.info(f"Audio cache found for '{safe_name}', skipping TTS.")
         return True
         
     try:
-        communicate = edge_tts.Communicate(word, voice)
+        # Replace '/' with ', ' for a natural pause in TTS pronunciation
+        tts_text = word.replace("/", ", ")
+        communicate = edge_tts.Communicate(tts_text, voice)
         await communicate.save(str(output_path))
-        logger.info(f"Successfully generated TTS audio for '{word_clean}'.")
+        logger.info(f"Successfully generated TTS audio for '{safe_name}'.")
         return True
     except Exception as e:
-        logger.error(f"Failed to generate TTS audio for '{word_clean}': {e}")
+        logger.error(f"Failed to generate TTS audio for '{safe_name}': {e}")
         return False
 
 async def generate_batch_audio(words: list[str], voice: str, media_dir_str: str = "media") -> dict[str, bool]:
@@ -36,7 +40,8 @@ async def generate_batch_audio(words: list[str], voice: str, media_dir_str: str 
     results = {}
     for idx, word in enumerate(words):
         word_clean = word.strip().lower()
-        output_path = media_dir / f"{word_clean}.mp3"
+        safe_name = re.sub(r'[\\/*?:"<>|]', '_', word_clean)
+        output_path = media_dir / f"{safe_name}.mp3"
         
         is_cached = output_path.exists()
         

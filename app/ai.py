@@ -2,7 +2,9 @@ import os
 import json
 import logging
 import requests
+import re
 from pathlib import Path
+from app.normalizer import normalize_for_ai, normalize_for_ai_retry
 
 logger = logging.getLogger("word2anki")
 
@@ -27,7 +29,9 @@ def load_env() -> None:
 def get_cache_path(word: str) -> Path:
     cache_dir = Path("cache")
     cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir / f"{word.lower()}.json"
+    # Sanitize word to make it a safe filename (replace slashes, etc.)
+    safe_name = re.sub(r'[\\/*?:"<>|]', '_', word.lower())
+    return cache_dir / f"{safe_name}.json"
 
 def get_cached_word(word: str) -> dict | None:
     """
@@ -131,6 +135,37 @@ def fetch_words_from_api(words: list[str], api_key: str, api_base_url: str, mode
         
     return parse_json_array(response_text)
 
+def combine_definitions(raw_word: str, items: list[dict]) -> dict:
+    """
+    Combines the explanations of multiple normalized words into a single definition dictionary.
+    """
+    if not items:
+        return {
+            "word": raw_word,
+            "meaning_cn": "No meaning found",
+            "meaning_en": "No meaning found",
+            "example": "No example found",
+            "memory_tip": "No memory tip found"
+        }
+    if len(items) == 1:
+        data = items[0].copy()
+        data["word"] = raw_word
+        return data
+        
+    # Combine fields using <br> for HTML rendering in Anki
+    meaning_cn = "<br>".join([f"<b>{item.get('word', '')}</b>: {item.get('meaning_cn', '')}" for item in items])
+    meaning_en = "<br>".join([f"<b>{item.get('word', '')}</b>: {item.get('meaning_en', '')}" for item in items])
+    example = "<br>".join([f"<b>{item.get('word', '')}</b>: {item.get('example', '')}" for item in items])
+    memory_tip = "<br>".join([f"<b>{item.get('word', '')}</b>: {item.get('memory_tip', '')}" for item in items])
+    
+    return {
+        "word": raw_word,
+        "meaning_cn": meaning_cn,
+        "meaning_en": meaning_en,
+        "example": example,
+        "memory_tip": memory_tip
+    }
+
 def process_batch(words: list[str], api_model: str, api_base_url: str, api_timeout: int = 120) -> dict[str, dict]:
     """
     Processes a batch of words by fetching details from OpenAI-compatible API (with fallback logic).
@@ -155,33 +190,90 @@ def process_batch(words: list[str], api_model: str, api_base_url: str, api_timeo
     if not uncached_words:
         return results
 
-    # 2. Attempt batch call
-    logger.info(f"Querying API model '{api_model}' for batch: {uncached_words}... (waiting for response)")
-    try:
-        batch_results = fetch_words_from_api(uncached_words, api_key, api_base_url, api_model, api_timeout)
-        for item in batch_results:
-            word_key = item.get("word", "").lower()
-            if word_key in uncached_words:
-                save_to_cache(word_key, item)
-                results[word_key] = item
-                logger.info(f"Successfully generated and cached: {word_key}")
-    except Exception as e:
-        logger.warning(f"Batch generation failed: {e}. Falling back to single-word queries...")
+    # Map raw words to normalized word lists
+    raw_to_normalized = {w: normalize_for_ai(w) for w in uncached_words}
+    
+    # Collect all unique normalized words needed across the batch
+    unique_normalized = []
+    for norm_list in raw_to_normalized.values():
+        for nw in norm_list:
+            if nw not in unique_normalized:
+                unique_normalized.append(nw)
+
+    # 2. Attempt batch call using normalized words
+    if unique_normalized:
+        logger.info(f"Querying API model '{api_model}' for normalized batch: {unique_normalized}... (waiting for response)")
+        try:
+            batch_results = fetch_words_from_api(unique_normalized, api_key, api_base_url, api_model, api_timeout)
+            api_response_dict = {item.get("word", "").lower(): item for item in batch_results if "word" in item}
+            
+            # Map back to raw words, combine and save
+            for w in uncached_words:
+                norm_list = raw_to_normalized[w]
+                missing = [nw for nw in norm_list if nw.lower() not in api_response_dict]
+                if missing:
+                    continue
+                
+                combined = combine_definitions(w, [api_response_dict[nw.lower()] for nw in norm_list])
+                save_to_cache(w, combined)
+                results[w.lower()] = combined
+                logger.info(f"Successfully generated and cached: {w}")
+        except Exception as e:
+            logger.warning(f"Batch generation failed: {e}. Falling back to single-word queries...")
         
-        # 3. Fallback to single-word calls
-        for w in uncached_words:
-            logger.info(f"Querying API individually for: {w}")
-            try:
-                single_results = fetch_words_from_api([w], api_key, api_base_url, api_model, api_timeout)
+    # 3. Fallback to single-word calls for remaining words
+    for w in uncached_words:
+        if w.lower() in results:
+            continue
+            
+        logger.info(f"Querying API individually for: {w}")
+        norm_list = raw_to_normalized[w]
+        try:
+            word_items = []
+            for nw in norm_list:
+                logger.info(f"Querying single normalized word: {nw}")
+                single_results = fetch_words_from_api([nw], api_key, api_base_url, api_model, api_timeout)
                 if single_results and len(single_results) > 0:
-                    item = single_results[0]
-                    word_key = w.lower()
-                    save_to_cache(word_key, item)
-                    results[word_key] = item
-                    logger.info(f"Successfully generated and cached (fallback): {word_key}")
+                    word_items.append(single_results[0])
                 else:
-                    raise ValueError("Empty response from API")
-            except Exception as single_err:
-                logger.error(f"Failed to generate for '{w}' in fallback: {single_err}")
+                    raise ValueError(f"Empty response from API for normalized word '{nw}'")
+            
+            if len(word_items) == len(norm_list):
+                combined = combine_definitions(w, word_items)
+                save_to_cache(w, combined)
+                results[w.lower()] = combined
+                logger.info(f"Successfully generated and cached (fallback): {w}")
+            else:
+                raise ValueError("Failed to get definitions for all normalized parts")
+                
+        except Exception as single_err:
+            logger.error(f"Failed to generate for '{w}' in fallback: {single_err}")
+            
+            # --- THIRD LAYER: RETRY FLOW ---
+            logger.info(f"Retrying generation with aggressive normalization for: {w}")
+            try:
+                norm_list_retry = normalize_for_ai_retry(w)
+                logger.info(f"Normalized for retry: {norm_list_retry}")
+                if not norm_list_retry:
+                    raise ValueError(f"Aggressive normalization returned empty list for '{w}'")
+                    
+                word_items_retry = []
+                for nw in norm_list_retry:
+                    logger.info(f"Querying single retry normalized word: {nw}")
+                    single_results = fetch_words_from_api([nw], api_key, api_base_url, api_model, api_timeout)
+                    if single_results and len(single_results) > 0:
+                        word_items_retry.append(single_results[0])
+                    else:
+                        raise ValueError(f"Empty response from API for retry word '{nw}'")
+                
+                if len(word_items_retry) == len(norm_list_retry):
+                    combined = combine_definitions(w, word_items_retry)
+                    save_to_cache(w, combined)
+                    results[w.lower()] = combined
+                    logger.info(f"Successfully generated and cached (retry): {w}")
+                else:
+                    raise ValueError("Failed to get definitions in retry")
+            except Exception as retry_err:
+                logger.error(f"Failed to generate for '{w}' even after retry: {retry_err}")
                 
     return results

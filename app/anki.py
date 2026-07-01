@@ -1,5 +1,6 @@
 import requests
 import logging
+import re
 from pathlib import Path
 
 logger = logging.getLogger("word2anki")
@@ -156,12 +157,13 @@ def push_card_to_anki(deck_name: str, word_data: dict, media_dir_str: str = "med
     
     # 1. Upload media file if it exists
     media_dir = Path(media_dir_str)
-    mp3_path = media_dir / f"{word_lower}.mp3"
+    safe_name = re.sub(r'[\\/*?:"<>|]', '_', word_lower)
+    mp3_path = media_dir / f"{safe_name}.mp3"
     
     media_filename = ""
     if mp3_path.exists():
         # Prefix filename to ensure uniqueness in Anki's global media namespace
-        media_filename = f"word2anki_{word_lower.replace(' ', '_')}.mp3"
+        media_filename = f"word2anki_{safe_name.replace(' ', '_')}.mp3"
         try:
             invoke(
                 "storeMediaFile",

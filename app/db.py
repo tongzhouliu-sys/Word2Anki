@@ -88,3 +88,13 @@ def clear_db(db_path: str) -> None:
     with get_db_connection(db_path) as conn:
         conn.execute("DELETE FROM jobs;")
         conn.commit()
+
+def get_failed_words(db_path: str) -> list[str]:
+    """
+    Retrieves all words from the jobs table with status 'FAILED'.
+    """
+    init_db(db_path)
+    with get_db_connection(db_path) as conn:
+        cursor = conn.execute("SELECT word FROM jobs WHERE status = 'FAILED'")
+        return [row[0] for row in cursor.fetchall()]
+

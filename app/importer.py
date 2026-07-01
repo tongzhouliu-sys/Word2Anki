@@ -119,3 +119,55 @@ def extract_words_from_docx(file_path: str) -> tuple[list[str], int]:
     sorted_items = sorted(collected_terms, key=sort_key)
     all_terms = [item["word"] for item in sorted_items]
     return all_terms, raw_lines_count, numbered_count
+
+def extract_words_from_txt(file_path: str) -> tuple[list[str], int, int]:
+    """
+    Reads a plain text file line-by-line, cleans each line,
+    and extracts English words/phrases.
+    
+    If line number prefixes exist (e.g. "1. apple", "2. banana"), the list is sorted
+    primarily by numbering order (highest priority), and secondarily by original
+    document appearance order.
+    
+    Returns a tuple containing:
+      - unique_terms: The list of sorted unique lowercased words/phrases.
+      - raw_lines_count: The count of valid lines detected.
+      - numbered_count: The count of unique numbers.
+    """
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Text file not found at: {file_path}")
+
+    raw_lines = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            raw_lines.append(line)
+            
+    raw_lines_count = 0
+    collected_terms = []
+    doc_index = 0
+    for line in raw_lines:
+        for sub_line in line.split('\n'):
+            num, rest = extract_number_prefix(sub_line)
+            cleaned = clean_line(rest)
+            if cleaned:
+                raw_lines_count += 1
+                collected_terms.append({
+                    "word": cleaned.lower(),
+                    "num": num,
+                    "index": doc_index
+                })
+                doc_index += 1
+                
+    # Sort primarily by numbering (num_val), and secondarily by original index
+    def sort_key(item):
+        num_val = item["num"] if item["num"] is not None else float('inf')
+        return (num_val, item["index"])
+
+    unique_numbers = {item["num"] for item in collected_terms if item["num"] is not None}
+    numbered_count = len(unique_numbers)
+
+    sorted_items = sorted(collected_terms, key=sort_key)
+    all_terms = [item["word"] for item in sorted_items]
+    return all_terms, raw_lines_count, numbered_count
+
