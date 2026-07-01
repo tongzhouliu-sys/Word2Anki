@@ -71,11 +71,15 @@ def normalize_term(line: str) -> list[str]:
     # 4. Fallback: just return the split parts
     return parts
 
-def extract_words_from_docx(file_path: str) -> list[str]:
+def extract_words_from_docx(file_path: str) -> tuple[list[str], int]:
     """
     Reads a .docx file line-by-line (from paragraphs and tables), cleans each line,
     normalizes slash-expressions, and extracts English words/phrases in their
     original order without duplicates.
+    
+    Returns a tuple containing:
+      - unique_terms: The list of unique expanded words/phrases.
+      - raw_lines_count: The count of valid lines detected before expansion.
     """
     path = Path(file_path)
     if not path.exists():
@@ -96,12 +100,14 @@ def extract_words_from_docx(file_path: str) -> list[str]:
                 if cell.text:
                     raw_lines.append(cell.text)
                     
+    raw_lines_count = 0
     cleaned_terms = []
     for line in raw_lines:
         # Split by newline in case a cell or paragraph has multiple lines
         for sub_line in line.split('\n'):
             cleaned = clean_line(sub_line)
             if cleaned:
+                raw_lines_count += 1
                 # Normalize and expand any slash terms
                 normalized_terms = normalize_term(cleaned)
                 for term in normalized_terms:
@@ -111,4 +117,4 @@ def extract_words_from_docx(file_path: str) -> list[str]:
                 
     # Lowercase and deduplicate while preserving the original order of appearance
     unique_terms = list(dict.fromkeys(t.lower() for t in cleaned_terms))
-    return unique_terms
+    return unique_terms, raw_lines_count
