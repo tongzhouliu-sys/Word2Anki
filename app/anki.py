@@ -117,9 +117,10 @@ def ensure_model_exists() -> None:
     card_templates = [
         {
             "Name": "Card 1",
-            "Front": "<div class='card'><div class='word-title'>{{Word}}</div></div>",
+            "Front": "<div class='card'><div class='word-title'>{{Word}}</div><div style='margin-top: 10px;'>{{Sound}}</div></div>",
             "Back": """<div class='card'>
   <div class='word-title'>{{Word}}</div>
+  <div style='margin-top: 10px;'>{{Sound}}</div>
   <hr style='border: 0; border-top: 1px solid #E2E8F0; margin-bottom: 20px;'>
   
   <div class='field-label'>🇨🇳 Meaning (CN)</div>
@@ -133,8 +134,6 @@ def ensure_model_exists() -> None:
   
   <div class='field-label'>💡 Memory Tip</div>
   <div class='field-content' style='color: #4A5568;'>{{Memory_Tip}}</div>
-  
-  <div style='margin-top: 20px;'>{{Sound}}</div>
 </div>"""
         }
     ]
