@@ -92,7 +92,14 @@ def build_command(file_path: str, deck_override: str = None) -> None:
         logger.info("All words are already completed! Nothing to do.")
         return
 
-    deck_name = deck_override or config.get("deck_name", "Word2Anki")
+    default_deck = deck_override or config.get("deck_name", "Word2Anki")
+    try:
+        deck_name_input = input(f"请输入 Anki 单词本的名字 [默认: {default_deck}]: ").strip()
+        deck_name = deck_name_input if deck_name_input else default_deck
+    except KeyboardInterrupt:
+        print()
+        logger.info("用户中断了任务。")
+        return
     
     # User startup confirmation
     print("\n" + "="*50)
