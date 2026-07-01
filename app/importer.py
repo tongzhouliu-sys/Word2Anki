@@ -19,6 +19,32 @@ def clean_line(line: str) -> str | None:
         return line
     return None
 
+def extract_number_prefix(line: str) -> tuple[int | None, str]:
+    """
+    Extracts leading integer number from the line if it is a list prefix.
+    Returns (parsed_int, cleaned_rest).
+    """
+    line = line.strip()
+    # Match patterns like: "1. apple", "1) apple", "[1] apple", "1 - apple"
+    # Ensure it's a prefix by checking for separating characters (dot, parenthesis, hyphen, brackets)
+    match = re.match(r'^\s*(?:\[?(\d+)\]?[\.\)\-\s]+|\s*(\d+)[\.\)]\s*)(.*)$', line)
+    if match:
+        num_str = match.group(1) or match.group(2)
+        rest = match.group(3).strip()
+        # Ensure rest contains letters, otherwise it might just be a random number line
+        if num_str and re.search(r'[a-zA-Z]', rest):
+            return int(num_str), rest
+            
+    # Also handle simple "number space word" if it's clearly a list:
+    # E.g. "1 apple" where there's a space after digits.
+    match_space = re.match(r'^\s*(\d+)\s+([a-zA-Z].*)$', line)
+    if match_space:
+        num_str = match_space.group(1)
+        rest = match_space.group(2).strip()
+        return int(num_str), rest
+        
+    return None, line
+
 def normalize_term(line: str) -> list[str]:
     """
     Normalizes a line containing slashes into a list of separate words or phrases.
@@ -74,11 +100,14 @@ def normalize_term(line: str) -> list[str]:
 def extract_words_from_docx(file_path: str) -> tuple[list[str], int]:
     """
     Reads a .docx file line-by-line (from paragraphs and tables), cleans each line,
-    normalizes slash-expressions, and extracts English words/phrases in their
-    original order without duplicates.
+    normalizes slash-expressions, and extracts English words/phrases.
+    
+    If line number prefixes exist (e.g. "1. apple", "2. banana"), the list is sorted
+    primarily by numbering order (highest priority), and secondarily by original
+    document appearance order.
     
     Returns a tuple containing:
-      - unique_terms: The list of unique expanded words/phrases.
+      - unique_terms: The list of sorted unique lowercased words/phrases.
       - raw_lines_count: The count of valid lines detected before expansion.
     """
     path = Path(file_path)
@@ -101,11 +130,14 @@ def extract_words_from_docx(file_path: str) -> tuple[list[str], int]:
                     raw_lines.append(cell.text)
                     
     raw_lines_count = 0
-    cleaned_terms = []
+    collected_terms = []
+    doc_index = 0
     for line in raw_lines:
         # Split by newline in case a cell or paragraph has multiple lines
         for sub_line in line.split('\n'):
-            cleaned = clean_line(sub_line)
+            # Parse number prefix if present
+            num, rest = extract_number_prefix(sub_line)
+            cleaned = clean_line(rest)
             if cleaned:
                 raw_lines_count += 1
                 # Normalize and expand any slash terms
@@ -113,8 +145,30 @@ def extract_words_from_docx(file_path: str) -> tuple[list[str], int]:
                 for term in normalized_terms:
                     cleaned_term = clean_line(term)
                     if cleaned_term:
-                        cleaned_terms.append(cleaned_term)
+                        collected_terms.append({
+                            "word": cleaned_term.lower(),
+                            "num": num,
+                            "index": doc_index
+                        })
+                        doc_index += 1
                 
-    # Return the full list of lowercased terms and the raw line count
-    all_terms = [t.lower() for t in cleaned_terms]
+    # Deduplicate while keeping the best number prefix representation
+    seen = {}
+    for item in collected_terms:
+        w = item["word"]
+        if w not in seen:
+            seen[w] = item
+        else:
+            existing = seen[w]
+            if item["num"] is not None:
+                if existing["num"] is None or item["num"] < existing["num"]:
+                    seen[w] = item
+
+    # Sort primarily by numbering (num_val), and secondarily by original index
+    def sort_key(item):
+        num_val = item["num"] if item["num"] is not None else float('inf')
+        return (num_val, item["index"])
+
+    sorted_items = sorted(seen.values(), key=sort_key)
+    all_terms = [item["word"] for item in sorted_items]
     return all_terms, raw_lines_count
