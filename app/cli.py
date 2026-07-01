@@ -98,7 +98,7 @@ def build_command(file_path: str, deck_override: str = None) -> None:
     # 1. Read word document and extract words
     logger.info(f"Reading Word document: {file_path}")
     try:
-        all_terms, raw_lines_count = extract_words_from_docx(file_path)
+        all_terms, raw_lines_count, numbered_count = extract_words_from_docx(file_path)
     except Exception as e:
         logger.error(f"Error parsing Word file: {e}")
         sys.exit(1)
@@ -123,7 +123,10 @@ def build_command(file_path: str, deck_override: str = None) -> None:
             logger.info("用户中断了任务。")
             return
             
-    logger.info(f"Extracted {len(all_words)} words/phrases to process from {raw_lines_count} lines in document.")
+    if numbered_count > 0:
+        logger.info(f"Extracted {len(all_words)} words/phrases to process from {numbered_count} numbered items in document.")
+    else:
+        logger.info(f"Extracted {len(all_words)} words/phrases to process from {raw_lines_count} lines in document.")
     
     if not all_words:
         logger.warning("No words found in the document. Exiting.")
@@ -197,7 +200,10 @@ def build_command(file_path: str, deck_override: str = None) -> None:
     print("📋 Word2Anki 任务启动确认")
     print("  - 目标 Anki 单词本目录树规划:")
     print(render_deck_tree(tree_nodes))
-    print(f"  - 文档检测到的有效行数: {raw_lines_count} 行")
+    if numbered_count > 0:
+        print(f"  - 文档检测到的有效编号数: {numbered_count} 个")
+    else:
+        print(f"  - 文档检测到的有效行数: {raw_lines_count} 行")
     print(f"  - 展开并去重后的单词与词组数: {total_words} 个")
     print(f"  - 已导入成功单词数: {completed_count}")
     print(f"  - 本次待导入的单词数: {len(pending_words)}")

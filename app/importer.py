@@ -169,6 +169,10 @@ def extract_words_from_docx(file_path: str) -> tuple[list[str], int]:
         num_val = item["num"] if item["num"] is not None else float('inf')
         return (num_val, item["index"])
 
+    # Compute unique numbering count (number of distinct serial numbers detected)
+    unique_numbers = {item["num"] for item in collected_terms if item["num"] is not None}
+    numbered_count = len(unique_numbers)
+
     sorted_items = sorted(seen.values(), key=sort_key)
     all_terms = [item["word"] for item in sorted_items]
-    return all_terms, raw_lines_count
+    return all_terms, raw_lines_count, numbered_count
