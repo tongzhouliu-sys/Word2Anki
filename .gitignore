@@ -22,3 +22,8 @@ media/
 
 # OS files
 .DS_Store
+
+# User document files
+*.docx
+*.xlsx
+

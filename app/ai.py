@@ -93,7 +93,7 @@ Example output format:
   }}
 ]"""
 
-def fetch_words_from_api(words: list[str], api_key: str, api_base_url: str, model: str) -> list[dict]:
+def fetch_words_from_api(words: list[str], api_key: str, api_base_url: str, model: str, timeout: int = 120) -> list[dict]:
     """
     Queries OpenAI-compatible API to fetch data for a batch of words.
     """
@@ -120,7 +120,7 @@ def fetch_words_from_api(words: list[str], api_key: str, api_base_url: str, mode
         "temperature": 0.2
     }
     
-    response = requests.post(url, json=payload, headers=headers, timeout=60)
+    response = requests.post(url, json=payload, headers=headers, timeout=timeout)
     response.raise_for_status()
     res_json = response.json()
     
@@ -131,7 +131,7 @@ def fetch_words_from_api(words: list[str], api_key: str, api_base_url: str, mode
         
     return parse_json_array(response_text)
 
-def process_batch(words: list[str], api_model: str, api_base_url: str) -> dict[str, dict]:
+def process_batch(words: list[str], api_model: str, api_base_url: str, api_timeout: int = 120) -> dict[str, dict]:
     """
     Processes a batch of words by fetching details from OpenAI-compatible API (with fallback logic).
     Returns a mapping of word -> parsed_data.
@@ -158,7 +158,7 @@ def process_batch(words: list[str], api_model: str, api_base_url: str) -> dict[s
     # 2. Attempt batch call
     logger.info(f"Querying API model '{api_model}' for batch: {uncached_words}... (waiting for response)")
     try:
-        batch_results = fetch_words_from_api(uncached_words, api_key, api_base_url, api_model)
+        batch_results = fetch_words_from_api(uncached_words, api_key, api_base_url, api_model, api_timeout)
         for item in batch_results:
             word_key = item.get("word", "").lower()
             if word_key in uncached_words:
@@ -172,7 +172,7 @@ def process_batch(words: list[str], api_model: str, api_base_url: str) -> dict[s
         for w in uncached_words:
             logger.info(f"Querying API individually for: {w}")
             try:
-                single_results = fetch_words_from_api([w], api_key, api_base_url, api_model)
+                single_results = fetch_words_from_api([w], api_key, api_base_url, api_model, api_timeout)
                 if single_results and len(single_results) > 0:
                     item = single_results[0]
                     word_key = w.lower()

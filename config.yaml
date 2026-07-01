@@ -16,5 +16,9 @@ voice: "en-US-AvaNeural"
 # The SQLite database file path to keep track of job status
 db_path: "word2anki.db"
 
-# The batch size of words to send in a single API request (10-20 is recommended)
-batch_size: 15
+# The batch size of words to send in a single API request (5-10 is recommended to avoid timeouts)
+batch_size: 5
+
+# The timeout in seconds for API requests
+api_timeout: 120
+

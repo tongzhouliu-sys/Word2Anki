@@ -107,10 +107,11 @@ def build_command(file_path: str) -> None:
         sys.exit(1)
 
     # 4. Process pending words in batches
-    batch_size = config.get("batch_size", 15)
+    batch_size = config.get("batch_size", 5)  # Use new default batch_size of 5
     voice = config.get("voice", "en-US-AvaNeural")
     api_model = config.get("api_model", "gpt-4o-mini")
     api_base_url = config.get("api_base_url", "https://api.openai.com/v1")
+    api_timeout = config.get("api_timeout", 120)
     
     logger.info(f"Starting pipeline. Processing {len(pending_words)} words in batches of {batch_size}...")
     
@@ -125,7 +126,7 @@ def build_command(file_path: str) -> None:
         # A. Call API to generate explanations (handles caching internally)
         ai_data = {}
         try:
-            ai_data = process_batch(batch, api_model, api_base_url)
+            ai_data = process_batch(batch, api_model, api_base_url, api_timeout)
         except Exception as e:
             logger.error(f"Failed to process batch {batch}: {e}")
             for w in batch:
