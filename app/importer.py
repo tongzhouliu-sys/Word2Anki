@@ -47,55 +47,10 @@ def extract_number_prefix(line: str) -> tuple[int | None, str]:
 
 def normalize_term(line: str) -> list[str]:
     """
-    Normalizes a line containing slashes into a list of separate words or phrases.
-    Handles synonyms (e.g. "servant/butler"), phrase options (e.g. "to stifle a yawn/cough/scream"),
-    and embedded options (e.g. "keep a straight/poker face").
+    Returns the line as is. Slash expansion is disabled to respect the
+    original 'one line = one card' format of the document.
     """
-    line = line.strip()
-    if "/" not in line:
-        return [line]
-
-    # 1. If there are spaces around any slash (e.g. "a / b" or "a/ b"),
-    # it's a list of independent synonyms. We split by slash and return the parts.
-    if " /" in line or "/ " in line:
-        parts = [p.strip() for p in line.split('/') if p.strip()]
-        return parts
-
-    # 2. Check for Phrase Prefix Rule:
-    # e.g., "to stifle a yawn/cough/scream" -> ["to stifle a yawn", "cough", "scream"]
-    parts = [p.strip() for p in line.split('/') if p.strip()]
-    if len(parts) > 1:
-        words_in_first = parts[0].split()
-        if len(words_in_first) >= 2 and all(len(p.split()) == 1 for p in parts[1:]):
-            prefix = " ".join(words_in_first[:-1])
-            expanded = []
-            for p in parts:
-                if p.startswith(prefix + " "):
-                    expanded.append(p)
-                else:
-                    expanded.append(f"{prefix} {p}")
-            return expanded
-
-    # 3. Check for Embedded Token Rule (e.g., "keep a straight/poker face")
-    tokens = line.split()
-    slash_token_idx = -1
-    for idx, token in enumerate(tokens):
-        if '/' in token and not token.startswith('/') and not token.endswith('/'):
-            slash_token_idx = idx
-            break
-
-    if slash_token_idx != -1:
-        target_token = tokens[slash_token_idx]
-        options = [opt.strip() for opt in target_token.split('/') if opt.strip()]
-        expanded = []
-        for opt in options:
-            new_tokens = list(tokens)
-            new_tokens[slash_token_idx] = opt
-            expanded.append(" ".join(new_tokens))
-        return expanded
-
-    # 4. Fallback: just return the split parts
-    return parts
+    return [line]
 
 def extract_words_from_docx(file_path: str) -> tuple[list[str], int]:
     """
