@@ -6,7 +6,7 @@
 
 ## 📖 项目说明
 
-Word2Anki 是一个**本地个人化的高效英语词汇背诵卡片制作工具**。它的核心目标是将普通的 Word 单词文档（`.docx`）快速转换为带有 Claude AI 生成的高级丰富释义、例句、记忆法以及 Edge TTS 真人纯正发音的 Anki 卡片。
+Word2Anki 是一个**本地个人化的高效英语词汇背诵卡片制作工具**。它的核心目标是将普通的 Word 单词文档（`.docx`）快速转换为带有 AI (支持 OpenAI 兼容接口，如 DeepSeek, GPT 等) 生成的高级丰富释义、例句、记忆法以及 Edge TTS 真人纯正发音的 Anki 卡片。
 
 ### 🛠️ 核心架构与设计原则
 
@@ -34,19 +34,21 @@ pip3 install -r requirements.txt
 在项目根目录下，准备以下配置文件：
 
 #### A. `.env`（秘钥配置）
-在根目录下新建 `.env` 文件，填入您的 Claude API 密钥：
+在根目录下新建 `.env` 文件，填入您的 API 密钥：
 ```env
-CLAUDE_API_KEY=你的Claude_API密钥_在这里
+API_KEY=你的OpenAI兼容API密钥_在这里
+# 或者使用 OPENAI_API_KEY=你的密钥
 ```
 
 #### B. `config.yaml`（基础配置，自动生成）
 项目运行时会自动生成该文件，您可以根据需要修改：
 ```yaml
 deck_name: "Word2Anki"                    # 导入到 Anki 中的牌组名称
-claude_model: "claude-3-5-sonnet-20241022" # 调用的 Claude 模型
+api_model: "gpt-4o-mini"                  # 调用的模型 (例如 gpt-4o-mini, deepseek-chat)
+api_base_url: "https://api.openai.com/v1" # API 基础 URL (支持 OpenAI 兼容格式如 DeepSeek, OneAPI 等)
 voice: "en-US-AvaNeural"                  # TTS 发音人 (例如: en-US-AvaNeural, en-GB-SoniaNeural)
 db_path: "word2anki.db"                   # 状态追踪数据库路径
-batch_size: 15                            # Claude 批量请求大小 (推荐 10-20)
+batch_size: 15                            # API 批量请求大小 (推荐 10-20)
 ```
 
 ### 3. 打开并配置 Anki
@@ -72,7 +74,7 @@ word2anki/
 ├── app/
 │   ├── cli.py          # 唯一入口 (处理终端交互、双日志记录、流水线调度)
 │   ├── importer.py     # 解析 Word，正则提取排重单词
-│   ├── ai.py           # 批量调用 Claude API 翻译解释
+│   ├── ai.py           # 批量调用 OpenAI 兼容 API 翻译解释
 │   ├── audio.py        # 并发调用 Edge TTS 语音生成
 │   ├── anki.py         # 自动创建 Deck/Model 模板，推送卡片及媒体
 │   └── db.py           # SQLite 状态管理 (断点续传)
@@ -80,7 +82,7 @@ word2anki/
 ├── media/              # 存放 TTS 音频 (例如: apple.mp3)
 ├── logs/               # 存放运行日志与错误日志 (word2anki.log)
 ├── config.yaml         # 基础参数配置
-└── .env                # Claude 密钥配置
+└── .env                # API 密钥配置
 ```
 
 ---

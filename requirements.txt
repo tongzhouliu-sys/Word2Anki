@@ -1,5 +1,4 @@
 python-docx
-anthropic
 edge-tts
 requests
 pyyaml

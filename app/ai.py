@@ -1,9 +1,8 @@
 import os
 import json
-import re
 import logging
+import requests
 from pathlib import Path
-from anthropic import Anthropic
 
 logger = logging.getLogger("word2anki")
 
@@ -94,35 +93,54 @@ Example output format:
   }}
 ]"""
 
-def fetch_words_from_claude(words: list[str], client: Anthropic, model: str) -> list[dict]:
+def fetch_words_from_api(words: list[str], api_key: str, api_base_url: str, model: str) -> list[dict]:
     """
-    Queries Claude to fetch data for a batch of words.
+    Queries OpenAI-compatible API to fetch data for a batch of words.
     """
     prompt = generate_prompt(words)
+    url = f"{api_base_url.rstrip('/')}/chat/completions"
     
-    response = client.messages.create(
-        model=model,
-        max_tokens=4000,
-        system="You are an expert English teacher. You output ONLY valid JSON arrays containing English word definitions with no surrounding text or markdown blocks.",
-        messages=[
-            {"role": "user", "content": prompt}
-        ]
-    )
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
     
-    response_text = response.content[0].text
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system", 
+                "content": "You are an expert English teacher. You output ONLY valid JSON arrays containing English word definitions with no surrounding text or markdown blocks."
+            },
+            {
+                "role": "user", 
+                "content": prompt
+            }
+        ],
+        "temperature": 0.2
+    }
+    
+    response = requests.post(url, json=payload, headers=headers, timeout=60)
+    response.raise_for_status()
+    res_json = response.json()
+    
+    try:
+        response_text = res_json["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as parse_err:
+        raise ValueError(f"Failed to parse API response structure: {res_json}") from parse_err
+        
     return parse_json_array(response_text)
 
-def process_batch(words: list[str], model: str) -> dict[str, dict]:
+def process_batch(words: list[str], api_model: str, api_base_url: str) -> dict[str, dict]:
     """
-    Processes a batch of words by fetching details from Claude API (with fallback logic).
+    Processes a batch of words by fetching details from OpenAI-compatible API (with fallback logic).
     Returns a mapping of word -> parsed_data.
     """
     load_env()
-    api_key = os.environ.get("CLAUDE_API_KEY")
+    api_key = os.environ.get("API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        raise ValueError("CLAUDE_API_KEY environment variable is not set. Please set it in .env")
+        raise ValueError("API key not found. Please set API_KEY or OPENAI_API_KEY in .env")
 
-    client = Anthropic(api_key=api_key)
     results = {}
     
     # 1. Filter out already cached words
@@ -138,9 +156,9 @@ def process_batch(words: list[str], model: str) -> dict[str, dict]:
         return results
 
     # 2. Attempt batch call
-    logger.info(f"Querying Claude API for batch: {uncached_words}")
+    logger.info(f"Querying OpenAI-compatible API for batch: {uncached_words}")
     try:
-        batch_results = fetch_words_from_claude(uncached_words, client, model)
+        batch_results = fetch_words_from_api(uncached_words, api_key, api_base_url, api_model)
         for item in batch_results:
             word_key = item.get("word", "").lower()
             if word_key in uncached_words:
@@ -152,9 +170,9 @@ def process_batch(words: list[str], model: str) -> dict[str, dict]:
         
         # 3. Fallback to single-word calls
         for w in uncached_words:
-            logger.info(f"Querying Claude API individually for: {w}")
+            logger.info(f"Querying API individually for: {w}")
             try:
-                single_results = fetch_words_from_claude([w], client, model)
+                single_results = fetch_words_from_api([w], api_key, api_base_url, api_model)
                 if single_results and len(single_results) > 0:
                     item = single_results[0]
                     word_key = w.lower()
@@ -162,9 +180,8 @@ def process_batch(words: list[str], model: str) -> dict[str, dict]:
                     results[word_key] = item
                     logger.info(f"Successfully generated and cached (fallback): {word_key}")
                 else:
-                    raise ValueError("Empty response from Claude")
+                    raise ValueError("Empty response from API")
             except Exception as single_err:
                 logger.error(f"Failed to generate for '{w}' in fallback: {single_err}")
-                # We do not write to results, letting calling code know this word failed
                 
     return results

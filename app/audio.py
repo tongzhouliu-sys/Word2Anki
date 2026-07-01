@@ -27,12 +27,25 @@ async def generate_single_audio(word: str, voice: str, media_dir: Path) -> bool:
 
 async def generate_batch_audio(words: list[str], voice: str, media_dir_str: str = "media") -> dict[str, bool]:
     """
-    Concurrently generates TTS audio files for a list of words.
+    Generates TTS audio files for a list of words.
+    Sequentially processes each word, sleeping for 1 second after each API request to prevent rate limiting.
     """
     media_dir = Path(media_dir_str)
     media_dir.mkdir(parents=True, exist_ok=True)
     
-    tasks = [generate_single_audio(word, voice, media_dir) for word in words]
-    results = await asyncio.gather(*tasks)
-    
-    return {word.lower(): success for word, success in zip(words, results)}
+    results = {}
+    for idx, word in enumerate(words):
+        word_clean = word.strip().lower()
+        output_path = media_dir / f"{word_clean}.mp3"
+        
+        is_cached = output_path.exists()
+        
+        success = await generate_single_audio(word, voice, media_dir)
+        results[word_clean] = success
+        
+        # Only throttle (sleep 1 second) if we did a network generation and there are more words
+        if not is_cached and idx < len(words) - 1:
+            logger.info("Throttling TTS: waiting 1 second before the next request...")
+            await asyncio.sleep(1.0)
+            
+    return results
