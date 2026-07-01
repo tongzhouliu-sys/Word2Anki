@@ -55,7 +55,7 @@ def load_config() -> dict:
         "batch_size": 15
     }
 
-def build_command(file_path: str) -> None:
+def build_command(file_path: str, deck_override: str = None) -> None:
     """
     Orchestrates the entire Word2Anki import & generation pipeline.
     """
@@ -98,7 +98,7 @@ def build_command(file_path: str) -> None:
         logger.error("Anki is not running. Please launch Anki and make sure AnkiConnect is installed and running.")
         sys.exit(1)
         
-    deck_name = config.get("deck_name", "Word2Anki")
+    deck_name = deck_override or config.get("deck_name", "Word2Anki")
     try:
         ensure_deck_exists(deck_name)
         ensure_model_exists()
@@ -174,11 +174,12 @@ def main() -> None:
     # build sub-command
     build_parser = subparsers.add_parser("build", help="Extract and build Anki deck from a .docx file")
     build_parser.add_argument("file", help="Path to the Word (.docx) file containing words")
+    build_parser.add_argument("--deck", help="Override the target Anki deck name")
     
     args = parser.parse_args()
     
     if args.command == "build":
-        build_command(args.file)
+        build_command(args.file, deck_override=args.deck)
 
 if __name__ == "__main__":
     main()
