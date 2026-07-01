@@ -31,6 +31,6 @@ def extract_words_from_docx(file_path: str) -> list[str]:
     # Extract English words (at least 2 letters)
     words = re.findall(r'\b[a-zA-Z]{2,}\b', text)
     
-    # Lowercase and deduplicate using set
-    unique_words = sorted(list(set(w.lower() for w in words)))
+    # Lowercase and deduplicate while preserving the original order of appearance
+    unique_words = list(dict.fromkeys(w.lower() for w in words))
     return unique_words

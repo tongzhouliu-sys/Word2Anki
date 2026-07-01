@@ -42,8 +42,10 @@ def get_pending_words(db_path: str, all_words: list[str]) -> list[str]:
         
         # Retrieve pending words (status is NEW or FAILED)
         cursor = conn.execute("SELECT word FROM jobs WHERE status != 'DONE'")
-        pending = [row[0] for row in cursor.fetchall()]
-        return pending
+        pending_set = {row[0] for row in cursor.fetchall()}
+        
+        # Filter all_words to maintain their original sequence
+        return [w for w in all_words if w in pending_set]
 
 def mark_done(db_path: str, word: str) -> None:
     """
