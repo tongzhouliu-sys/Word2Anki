@@ -92,13 +92,33 @@ def build_command(file_path: str, deck_override: str = None) -> None:
         logger.info("All words are already completed! Nothing to do.")
         return
 
+    deck_name = deck_override or config.get("deck_name", "Word2Anki")
+    
+    # User startup confirmation
+    print("\n" + "="*50)
+    print("📋 Word2Anki 任务启动确认")
+    print(f"  - 目标 Anki 单词本 (Deck): {deck_name}")
+    print(f"  - 文档内总单词/词组数: {total_words}")
+    print(f"  - 已导入成功单词数: {completed_count}")
+    print(f"  - 本次待导入的单词数: {len(pending_words)}")
+    print("="*50 + "\n")
+    
+    try:
+        user_input = input("确认要开始导入吗？(y/n) [y]: ").strip().lower()
+        if user_input not in ["", "y", "yes"]:
+            logger.info("用户取消了导入任务。")
+            return
+    except KeyboardInterrupt:
+        print()
+        logger.info("用户中断了导入任务。")
+        return
+
     # 3. Check Anki connect, ensure deck and note type exist
     logger.info("Checking Anki connection...")
     if not check_anki_connection():
         logger.error("Anki is not running. Please launch Anki and make sure AnkiConnect is installed and running.")
         sys.exit(1)
         
-    deck_name = deck_override or config.get("deck_name", "Word2Anki")
     try:
         ensure_deck_exists(deck_name)
         ensure_model_exists()
@@ -107,7 +127,7 @@ def build_command(file_path: str, deck_override: str = None) -> None:
         sys.exit(1)
 
     # 4. Process pending words in batches
-    batch_size = config.get("batch_size", 5)  # Use new default batch_size of 5
+    batch_size = config.get("batch_size", 10)  # Use new default batch_size of 10
     voice = config.get("voice", "en-US-AvaNeural")
     api_model = config.get("api_model", "gpt-4o-mini")
     api_base_url = config.get("api_base_url", "https://api.openai.com/v1")
