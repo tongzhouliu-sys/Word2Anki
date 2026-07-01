@@ -1,0 +1,17 @@
+# Word2Anki Configuration File
+
+# The name of the Anki Deck to import cards into
+deck_name: "Word2Anki"
+
+# The Claude model to use for generating translations and memory tips
+claude_model: "claude-3-5-sonnet-20241022"
+
+# The Edge TTS voice to use for pronunciation audio
+# Refer to edge-tts --list-voices for available options
+voice: "en-US-AvaNeural"
+
+# The SQLite database file path to keep track of job status
+db_path: "word2anki.db"
+
+# The batch size of words to send to Claude in a single request (10-20 is recommended)
+batch_size: 15
