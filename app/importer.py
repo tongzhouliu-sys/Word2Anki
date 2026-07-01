@@ -152,18 +152,6 @@ def extract_words_from_docx(file_path: str) -> tuple[list[str], int]:
                         })
                         doc_index += 1
                 
-    # Deduplicate while keeping the best number prefix representation
-    seen = {}
-    for item in collected_terms:
-        w = item["word"]
-        if w not in seen:
-            seen[w] = item
-        else:
-            existing = seen[w]
-            if item["num"] is not None:
-                if existing["num"] is None or item["num"] < existing["num"]:
-                    seen[w] = item
-
     # Sort primarily by numbering (num_val), and secondarily by original index
     def sort_key(item):
         num_val = item["num"] if item["num"] is not None else float('inf')
@@ -173,6 +161,6 @@ def extract_words_from_docx(file_path: str) -> tuple[list[str], int]:
     unique_numbers = {item["num"] for item in collected_terms if item["num"] is not None}
     numbered_count = len(unique_numbers)
 
-    sorted_items = sorted(seen.values(), key=sort_key)
+    sorted_items = sorted(collected_terms, key=sort_key)
     all_terms = [item["word"] for item in sorted_items]
     return all_terms, raw_lines_count, numbered_count
