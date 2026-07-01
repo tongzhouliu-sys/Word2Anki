@@ -161,7 +161,7 @@ def push_card_to_anki(deck_name: str, word_data: dict, media_dir_str: str = "med
     media_filename = ""
     if mp3_path.exists():
         # Prefix filename to ensure uniqueness in Anki's global media namespace
-        media_filename = f"word2anki_{word_lower}.mp3"
+        media_filename = f"word2anki_{word_lower.replace(' ', '_')}.mp3"
         try:
             invoke(
                 "storeMediaFile",
