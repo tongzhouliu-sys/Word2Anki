@@ -156,7 +156,7 @@ def process_batch(words: list[str], api_model: str, api_base_url: str) -> dict[s
         return results
 
     # 2. Attempt batch call
-    logger.info(f"Querying OpenAI-compatible API for batch: {uncached_words}")
+    logger.info(f"Querying API model '{api_model}' for batch: {uncached_words}... (waiting for response)")
     try:
         batch_results = fetch_words_from_api(uncached_words, api_key, api_base_url, api_model)
         for item in batch_results:

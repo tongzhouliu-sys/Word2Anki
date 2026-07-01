@@ -116,8 +116,11 @@ def build_command(file_path: str) -> None:
     
     processed_count = completed_count
     
-    for i in range(0, len(pending_words), batch_size):
+    total_batches = ((len(pending_words) - 1) // batch_size) + 1
+    
+    for idx_batch, i in enumerate(range(0, len(pending_words), batch_size), 1):
         batch = pending_words[i:i+batch_size]
+        logger.info(f"--- Processing Batch {idx_batch}/{total_batches} ({len(batch)} words) ---")
         
         # A. Call API to generate explanations (handles caching internally)
         ai_data = {}
@@ -142,9 +145,10 @@ def build_command(file_path: str) -> None:
         for w in batch:
             w_lower = w.lower()
             processed_count += 1
+            progress_pct = (processed_count / total_words) * 100
             
             if w_lower not in ai_data:
-                logger.error(f"[{processed_count}/{total_words}] ❌ {w} (Failed to generate AI content)")
+                logger.error(f"[{processed_count}/{total_words}] ({progress_pct:.1f}%) ❌ {w} (Failed to generate AI content)")
                 mark_failed(db_path, w, "Failed to generate AI content")
                 continue
                 
@@ -152,10 +156,10 @@ def build_command(file_path: str) -> None:
             try:
                 push_card_to_anki(deck_name, word_data, media_dir_str="media")
                 mark_done(db_path, w)
-                logger.info(f"[{processed_count}/{total_words}] ✅ {w}")
+                logger.info(f"[{processed_count}/{total_words}] ({progress_pct:.1f}%) ✅ {w}")
             except Exception as e:
                 error_msg = f"Failed to push card: {e}"
-                logger.error(f"[{processed_count}/{total_words}] ❌ {w} ({error_msg})")
+                logger.error(f"[{processed_count}/{total_words}] ({progress_pct:.1f}%) ❌ {w} ({error_msg})")
                 mark_failed(db_path, w, error_msg)
 
     logger.info("Pipeline run complete.")
