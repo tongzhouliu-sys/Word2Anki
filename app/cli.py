@@ -2,20 +2,39 @@ import argparse
 import sys
 import yaml
 import logging
+import asyncio
 from pathlib import Path
 
 from app.importer import extract_words_from_docx
-from app.db import get_pending_words, init_db
+from app.db import get_pending_words, init_db, mark_done, mark_failed
+from app.ai import process_batch
+from app.audio import generate_batch_audio
+from app.anki import check_anki_connection, ensure_deck_exists, ensure_model_exists, push_card_to_anki
 
-# Configure simple logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# Ensure logs directory exists
+Path("logs").mkdir(exist_ok=True)
+
+# Configure logging
 logger = logging.getLogger("word2anki")
+logger.setLevel(logging.DEBUG)
+
+# Clear existing handlers if any to avoid duplication
+if logger.handlers:
+    logger.handlers.clear()
+
+# File handler (detailed debugging log)
+file_handler = logging.FileHandler("logs/word2anki.log", encoding="utf-8")
+file_handler.setLevel(logging.DEBUG)
+file_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+file_handler.setFormatter(file_formatter)
+logger.addHandler(file_handler)
+
+# Console handler (clean progress updates)
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%H:%M:%S')
+console_handler.setFormatter(console_formatter)
+logger.addHandler(console_handler)
 
 def load_config() -> dict:
     config_path = Path("config.yaml")
@@ -28,7 +47,6 @@ def load_config() -> dict:
         except Exception as e:
             logger.warning(f"Failed to read config.yaml: {e}. Using defaults.")
     
-    # Default fallback config
     return {
         "deck_name": "Word2Anki",
         "claude_model": "claude-3-5-sonnet-20241022",
@@ -39,12 +57,12 @@ def load_config() -> dict:
 
 def build_command(file_path: str) -> None:
     """
-    Executes the main pipeline (Stage 1 logic only for now).
+    Orchestrates the entire Word2Anki import & generation pipeline.
     """
     config = load_config()
     db_path = config.get("db_path", "word2anki.db")
     
-    # Step 1: Read word document and extract words
+    # 1. Read word document and extract words
     logger.info(f"Reading Word document: {file_path}")
     try:
         all_words = extract_words_from_docx(file_path)
@@ -54,8 +72,11 @@ def build_command(file_path: str) -> None:
         
     logger.info(f"Extracted {len(all_words)} unique words from document.")
     
-    # Step 2: Initialize SQLite DB and get pending words
-    logger.info(f"Initializing SQLite DB: {db_path}")
+    if not all_words:
+        logger.warning("No words found in the document. Exiting.")
+        return
+
+    # 2. Initialize SQLite DB and get pending words
     try:
         init_db(db_path)
         pending_words = get_pending_words(db_path, all_words)
@@ -63,16 +84,80 @@ def build_command(file_path: str) -> None:
         logger.error(f"SQLite DB operation failed: {e}")
         sys.exit(1)
         
-    completed_count = len(all_words) - len(pending_words)
-    logger.info(f"Status update: {completed_count}/{len(all_words)} words already completed.")
-    logger.info(f"Pending words to process: {len(pending_words)}")
+    total_words = len(all_words)
+    completed_count = total_words - len(pending_words)
+    logger.info(f"Status update: {completed_count}/{total_words} words already completed.")
     
     if not pending_words:
-        logger.info("All words are already processed! Nothing to do.")
+        logger.info("All words are already completed! Nothing to do.")
         return
 
-    # In Stage 1, we stop here and wait for user verification.
-    logger.info("Stage 1 execution completed. Word list extracted and SQLite state initialized successfully.")
+    # 3. Check Anki connect, ensure deck and note type exist
+    logger.info("Checking Anki connection...")
+    if not check_anki_connection():
+        logger.error("Anki is not running. Please launch Anki and make sure AnkiConnect is installed and running.")
+        sys.exit(1)
+        
+    deck_name = config.get("deck_name", "Word2Anki")
+    try:
+        ensure_deck_exists(deck_name)
+        ensure_model_exists()
+    except Exception as e:
+        logger.error(f"Failed to verify/create deck or model: {e}")
+        sys.exit(1)
+
+    # 4. Process pending words in batches
+    batch_size = config.get("batch_size", 15)
+    voice = config.get("voice", "en-US-AvaNeural")
+    claude_model = config.get("claude_model", "claude-3-5-sonnet-20241022")
+    
+    logger.info(f"Starting pipeline. Processing {len(pending_words)} words in batches of {batch_size}...")
+    
+    processed_count = completed_count
+    
+    for i in range(0, len(pending_words), batch_size):
+        batch = pending_words[i:i+batch_size]
+        
+        # A. Call Claude to generate explanations (handles caching internally)
+        ai_data = {}
+        try:
+            ai_data = process_batch(batch, claude_model)
+        except Exception as e:
+            logger.error(f"Failed to process batch {batch}: {e}")
+            for w in batch:
+                mark_failed(db_path, w, f"Batch generation failed: {e}")
+            continue
+            
+        # B. Call Edge TTS to generate audios concurrently
+        successful_ai_words = [w for w in batch if w.lower() in ai_data]
+        if successful_ai_words:
+            try:
+                # generate_batch_audio is async
+                asyncio.run(generate_batch_audio(successful_ai_words, voice, media_dir_str="media"))
+            except Exception as e:
+                logger.warning(f"Audio generation encountered error: {e}. Pushing cards anyway.")
+                
+        # C. Push each word's card to Anki and update DB status
+        for w in batch:
+            w_lower = w.lower()
+            processed_count += 1
+            
+            if w_lower not in ai_data:
+                logger.error(f"[{processed_count}/{total_words}] ❌ {w} (Failed to generate AI content)")
+                mark_failed(db_path, w, "Failed to generate AI content")
+                continue
+                
+            word_data = ai_data[w_lower]
+            try:
+                push_card_to_anki(deck_name, word_data, media_dir_str="media")
+                mark_done(db_path, w)
+                logger.info(f"[{processed_count}/{total_words}] ✅ {w}")
+            except Exception as e:
+                error_msg = f"Failed to push card: {e}"
+                logger.error(f"[{processed_count}/{total_words}] ❌ {w} ({error_msg})")
+                mark_failed(db_path, w, error_msg)
+
+    logger.info("Pipeline run complete.")
 
 def main() -> None:
     parser = argparse.ArgumentParser(
