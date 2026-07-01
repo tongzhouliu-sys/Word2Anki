@@ -15,7 +15,7 @@ def clean_line(line: str) -> str | None:
     line = re.sub(r'^\s*(\d+[\.\)]|[\-\*•])\s*', '', line).strip()
     
     # Must contain at least one English letter and only consist of valid English word/phrase characters
-    if re.search(r'[a-zA-Z]', line) and re.match(r'^[a-zA-Z\s\-\'\,\.\(\)\?\/]+$', line):
+    if re.search(r'[a-zA-Z]', line) and re.match(r'^[a-zA-Z0-9\s\-\'\,\.\(\)\?\/’‘…\:\;\!\"“”]+$', line):
         return line
     return None
 
