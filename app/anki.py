@@ -204,9 +204,11 @@ def push_card_to_anki(deck_name: str, word_data: dict, media_dir_str: str = "med
     try:
         invoke("addNote", note=note)
         logger.info(f"Successfully added card for '{word}' to deck '{deck_name}'.")
+        return True
     except Exception as e:
         if "duplicate" in str(e).lower():
             logger.info(f"Card for '{word}' already exists in deck '{deck_name}', skipping addNote.")
+            return False
         else:
             raise e
 
@@ -225,3 +227,45 @@ def delete_deck_notes(note_ids: list[int]) -> None:
     """
     if note_ids:
         invoke("deleteNotes", notes=note_ids)
+
+def group_existing_notes(deck_name: str, group_size: int) -> None:
+    """
+    Groups existing notes in deck_name into sub-decks (e.g. deck_name::Group 1, deck_name::Group 2...)
+    by sorting note IDs ascending.
+    """
+    note_ids = get_deck_notes(deck_name)
+    if not note_ids:
+        logger.info(f"No existing notes found in deck '{deck_name}' to group.")
+        return
+        
+    sorted_notes = sorted(note_ids)
+    logger.info(f"Grouping {len(sorted_notes)} existing cards in deck '{deck_name}' with group size {group_size}...")
+    
+    # Retrieve notes info to get card IDs
+    try:
+        notes_info = invoke("notesInfo", notes=sorted_notes)
+    except Exception as e:
+        logger.error(f"Failed to retrieve notes info from Anki: {e}")
+        return
+
+    # Map card IDs to sub-decks
+    group_to_cards = {}
+    for idx, note in enumerate(notes_info):
+        group_num = (idx // group_size) + 1
+        sub_deck = f"{deck_name}::Group {group_num}"
+        if sub_deck not in group_to_cards:
+            group_to_cards[sub_deck] = []
+        card_ids = note.get("cards", [])
+        group_to_cards[sub_deck].extend(card_ids)
+
+    # Move cards using changeDeck in batches
+    for sub_deck, cards in group_to_cards.items():
+        if not cards:
+            continue
+        try:
+            ensure_deck_exists(sub_deck)
+            invoke("changeDeck", cards=cards, deck=sub_deck)
+            logger.info(f"Moved {len(cards)} cards to sub-deck '{sub_deck}'")
+        except Exception as e:
+            logger.error(f"Failed to move cards to '{sub_deck}': {e}")
+

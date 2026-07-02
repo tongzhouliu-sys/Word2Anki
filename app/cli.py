@@ -9,7 +9,7 @@ from app.importer import extract_words_from_docx, extract_words_from_txt
 from app.db import get_pending_words, init_db, mark_done, mark_failed, get_db_count, clear_db, get_failed_words
 from app.ai import process_batch
 from app.audio import generate_batch_audio
-from app.anki import check_anki_connection, ensure_deck_exists, ensure_model_exists, push_card_to_anki, get_deck_notes, delete_deck_notes
+from app.anki import check_anki_connection, ensure_deck_exists, ensure_model_exists, push_card_to_anki, get_deck_notes, delete_deck_notes, group_existing_notes
 
 # Ensure logs directory exists
 Path("logs").mkdir(exist_ok=True)
@@ -193,9 +193,36 @@ def build_command(file_path: str, deck_override: str = None) -> None:
                 # Recalculate pending words after clearing
                 pending_words = get_pending_words(db_path, all_words)
                 completed_count = 0
+                anki_count = 0
                 logger.info("✅ 历史数据已清空。")
             else:
                 logger.info("保留历史数据，将以断点续传/覆盖的增量模式继续。")
+        except KeyboardInterrupt:
+            print()
+            logger.info("用户中断了任务。")
+            return
+
+    group_size = None
+    if anki_count > 0:
+        try:
+            group_confirm = input("⚠️  检测到同名单词本导入，是否要对现有的单词分组？(y/n) [n]: ").strip().lower()
+            if group_confirm in ["y", "yes"]:
+                group_size_input = input("每组多少个单词？[默认: 20]: ").strip()
+                if group_size_input:
+                    try:
+                        group_size = int(group_size_input)
+                        if group_size <= 0:
+                            print("⚠️ 无效的分组大小，必须大于 0。将使用默认值 20。")
+                            group_size = 20
+                    except ValueError:
+                        print("⚠️ 无效的输入，将使用默认值 20。")
+                        group_size = 20
+                else:
+                    group_size = 20
+                
+                logger.info(f"正在对已有的 {anki_count} 个单词进行分组 (每组 {group_size} 个)...")
+                group_existing_notes(deck_name, group_size)
+                logger.info("✅ 现有单词分组完成。")
         except KeyboardInterrupt:
             print()
             logger.info("用户中断了任务。")
@@ -245,6 +272,7 @@ def build_command(file_path: str, deck_override: str = None) -> None:
     logger.info(f"Starting pipeline. Processing {len(pending_words)} words in batches of {batch_size}...")
     
     processed_count = completed_count
+    new_added_count = 0
     
     total_batches = ((len(pending_words) - 1) // batch_size) + 1
     
@@ -284,8 +312,15 @@ def build_command(file_path: str, deck_override: str = None) -> None:
                 
             word_data = ai_data[w_lower]
             try:
-                push_card_to_anki(deck_name, word_data, media_dir_str="media")
+                target_deck = deck_name
+                if group_size:
+                    group_num = ((anki_count + new_added_count) // group_size) + 1
+                    target_deck = f"{deck_name}::Group {group_num}"
+                
+                added = push_card_to_anki(target_deck, word_data, media_dir_str="media")
                 mark_done(db_path, w)
+                if added:
+                    new_added_count += 1
                 logger.info(f"[{processed_count}/{total_words}] ({progress_pct:.1f}%) ✅ {w}")
             except Exception as e:
                 error_msg = f"Failed to push card: {e}"
